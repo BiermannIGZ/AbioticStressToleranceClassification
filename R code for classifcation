@@ -1,0 +1,240 @@
+#set the working directory with setwd() 
+#download the hereafter mentioned packages and load the librarys: 
+library ("ggplot2")
+library ("prettyGraphs")
+library ("FactoMineR")
+library ("factoextra")
+library ("ade4")
+library ("ExPosition")
+library ("philentropy")
+library ("corrplot")
+library ("openxlsx")
+library ("readxl")
+library ("dplyr")
+
+#open the dataset in R; data must be gifen in the following format: first two columns: "Genotype" and "Treatment" followed by the observed traits; rows must be sorted genotyope and alternatilgy ctrl/treatment as given in the Supplemental Table1 of the publication. Conditional mean imputation is recommended be used to deal with missing values. 
+data <- read_excel("filepath.xlsx")
+
+#display the head of your imported data frame:
+head(data)
+
+#Data frame can be divided into active and supplemental variables and individuals. For our analysis all genotypes must be maintained as active, while only traits are considered as active
+data.active <- data[1:nrow(data), 3:ncol(data)]
+data.supplemental <- data[1:nrow(data),1:2]
+head(data.active)
+head(data.supplemental)
+
+res.pca.pre <- PCA(data.active, scale.unit = T, graph = F) # by adding argument ncp = X number of dimensions kept for the results is defined
+
+#Check Eigenvalues and export to excel
+eigenvalues <- get_eigenvalue(res.pca.pre)
+eigenvalue.df <- data.frame(eigenvalues)  
+eigenvalue_cutoff <- sum(eigenvalue.df$eigenvalue >= 1)
+eigenvalues.export <- data.frame(eigenvalues)
+write.xlsx(eigenvalues.export, "Eigenvalues.xlsx")
+
+#visualize Eigenvalues with a screen plot
+fviz_eig(res.pca.pre, addlabels = T, ylim = c(0,50), ncp = nrow(eigenvalues.export), ylab ="explained variance [%]", xlab = "PC", title = " " ) #if necessary increase ylim for visualization and change ncp for the respective number of input variables
+ggsave("Figure1.tiff", plot = last_plot(), height = 8.5, width = 8.5, units =c ("cm"), dpi=600)
+
+#get first results about PCs and input variable contribution
+#visualize relative relationships between variables, edit xlab and ylab according to your data
+fviz_pca_var(res.pca.pre, col.var = "black", repel = TRUE, xlab = "PC1 (48.7%)", ylab = "PC2 (15.9%)", title = " ")
+ggsave("Figure2.tiff", plot = last_plot(), height = 8.5, width = 8.5, units =c ("cm"), dpi=600)
+
+#From now on only consider PCS with eigenvalue >1 --> repeat PCA but limit results to the respective amount of dimensions
+head(eigenvalues)
+#Rerun PCA to obtain final results
+res.pca <- PCA(data.active, ncp = eigenvalue_cutoff, scale.unit = T, graph = T) # changing ncp = X to the number of dimensions needed for analysis
+
+#total cos2 of variables on PC 1-3
+fviz_cos2(res.pca, choice = "var", axes = 1:eigenvalue_cutoff, addlables = T)#gives info on the quality of representation of traits within the n PCs; adapt axes to the number of dimensions needed to keep
+ggsave("Figure3.tiff", plot = last_plot(), height = 8.5, width = 8.5, units =c ("cm"), dpi=600)
+
+#obtain and visualize variable contribution 
+fviz_contrib(res.pca, choice = "var", axes = 1:eigenvalue_cutoff, title = " ") # add a ylim = c(0, max Y value) if necessary
+ggsave("Figure4.tiff", plot = last_plot(), height = 8.5, width = 8.5, units =c ("cm"), dpi=600)
+
+#visualize variable contribution to PCs and export
+var <- get_pca_var(res.pca)
+var.export <- data.frame(var$contrib)
+write.xlsx(var.export, "VariableContributionToPCs.xlsx")
+
+tiff("Figure5.tiff", height = 8.5, width = 8.5, units =c ("cm"), res = 600, type = "cairo")
+corrplot(var$contrib, is.corr=FALSE, method = "color", addCoef.col = "black",number.cex = 0.75, number.digits = 1, col.lim = c(0,40), cl.pos = "r", cl.ratio = 0.2, cl.align.text = "l", cl.cex = 1.15, tl.cex = 1.15,  tl.col = "black", col = COL1(sequential = c("Blues"), 10))
+dev.off()
+
+#Extract the coordinates of individuals within the different dimensions --> matrix called ind.coord  
+get_pca_ind(res.pca)
+ind.coord <- (res.pca[["ind"]][["coord"]])
+ind.coord.export <- data.frame(data.supplemental,ind.coord)
+write.xlsx(ind.coord.export, "IndividualCoordinatesForPlotting.xlsx")
+
+
+#visualize and export treatments in a scatter plot
+
+Fig.Ind.Cood.Treatment <- ggplot(ind.coord.export, aes(Dim.1, Dim.2, colour=Treatment)) +
+geom_point() +
+scale_color_manual(values = c('#999999','#E69F00')) +
+theme(legend.position=c(0,1), legend.justification=c(0,1))
+Fig.Ind.Cood.Treatment
+ggsave("Figure6.tiff", plot = last_plot(), height = 8.5, width = 8.5, units =c ("cm"), dpi=600)
+
+#if mean values are of interest use the following:
+#IMPORTANT NOTE: Adapt the scale_shape_manual and scale_colour_manual arguments to suit your number of input genotypes and stresses
+ScatterPlotMeans_Data <- ind.coord.export %>% group_by(Genotype, Treatment) %>% summarise(Dim.1 = mean(Dim.1), Dim.2 = mean(Dim.2), Dim.3 = mean(Dim.3))
+write.xlsx(ScatterPlotMeans_Data, "ScatterPlotMeans.xlsx")
+
+ggplot(ScatterPlotMeans_Data, aes(Dim.1,Dim.2)) + theme_light() + theme( legend.position = "right") + xlab("PC1 (48.7 %)") + ylab ("PC2 (15.9%)")+ scale_x_continuous(breaks = seq(-5, 5, by = 1)) + scale_y_continuous(breaks = seq(-4, 2, by = 1)) + geom_point(aes(shape = Genotype, colour = Treatment, size = 1.5)) + scale_shape_manual(values = c(1, 2, 5, 6, 7, 8, 9, 13, 14, 15, 17, 18, 19, 20)) + scale_color_manual(values = c("#0000FF", "#FF0000")) + (scale_size(guide = "none")) 
+ggsave("Figure7.tiff", plot = last_plot(), height = 12.75, width = 18, units =c ("cm"), dpi=600)
+
+#calculate euclidean distances of ind.coord.PC.Eig.bigger.than.one (others PCs/Dimensions must be removed from ind.coord by now. Best to not calculate them in a second PCA round)
+ind.coord.dist <- distance(ind.coord, method = "euclidean")
+ind.coord.dist.export <- data.frame(data.supplemental,ind.coord.dist)
+write.xlsx(ind.coord.dist.export, "IndividualEuclideanDistance.xlsx")
+
+#Next step is to extract the distances between treatment and control. 
+#for 56 individual plants use this:
+res.ind.coord.dist <- c(ind.coord.dist[2,1], 
+                        ind.coord.dist[2,1], 
+                        ind.coord.dist[4,3], 
+                        ind.coord.dist[4,3], 
+                        ind.coord.dist[6,5], 
+                        ind.coord.dist[6,5], 
+                        ind.coord.dist[8,7], 
+                        ind.coord.dist[8,7], 
+                        ind.coord.dist[10,9], 
+                        ind.coord.dist[10,9], 
+                        ind.coord.dist[12,11], 
+                        ind.coord.dist[12,11], 
+                        ind.coord.dist[14,13], 
+                        ind.coord.dist[14,13], 
+                        ind.coord.dist[16,15], 
+                        ind.coord.dist[16,15], 
+                        ind.coord.dist[18,17], 
+                        ind.coord.dist[18,17], 
+                        ind.coord.dist[20,19], 
+                        ind.coord.dist[20,19], 
+                        ind.coord.dist[22,21], 
+                        ind.coord.dist[22,21], 
+                        ind.coord.dist[24,23], 
+                        ind.coord.dist[24,23], 
+                        ind.coord.dist[26,25], 
+                        ind.coord.dist[26,25], 
+                        ind.coord.dist[28,27],
+                        ind.coord.dist[28,27],
+                        ind.coord.dist[30,29], 
+                        ind.coord.dist[30,29], 
+                        ind.coord.dist[32,31], 
+                        ind.coord.dist[32,31], 
+                        ind.coord.dist[34,33], 
+                        ind.coord.dist[34,33], 
+                        ind.coord.dist[36,35], 
+                        ind.coord.dist[36,35], 
+                        ind.coord.dist[38,37], 
+                        ind.coord.dist[38,37], 
+                        ind.coord.dist[40,39], 
+                        ind.coord.dist[40,39], 
+                        ind.coord.dist[42,41], 
+                        ind.coord.dist[42,41], 
+                        ind.coord.dist[44,43], 
+                        ind.coord.dist[44,43], 
+                        ind.coord.dist[46,45], 
+                        ind.coord.dist[46,45], 
+                        ind.coord.dist[48,47], 
+                        ind.coord.dist[48,47], 
+                        ind.coord.dist[50,49], 
+                        ind.coord.dist[50,49], 
+                        ind.coord.dist[52,51], 
+                        ind.coord.dist[52,51], 
+                        ind.coord.dist[54,53], 
+                        ind.coord.dist[54,53], 
+                        ind.coord.dist[56,55], 
+                        ind.coord.dist[56,55], 
+                        ind.coord.dist[58,57], 
+                        ind.coord.dist[58,57], 
+                        ind.coord.dist[60,59], 
+                        ind.coord.dist[60,59], 
+                        ind.coord.dist[62,61], 
+                        ind.coord.dist[62,61], 
+                        ind.coord.dist[64,63], 
+                        ind.coord.dist[64,63], 
+                        ind.coord.dist[66,65], 
+                        ind.coord.dist[66,65], 
+                        ind.coord.dist[68,67], 
+                        ind.coord.dist[68,67], 
+                        ind.coord.dist[70,69], 
+                        ind.coord.dist[70,69], 
+                        ind.coord.dist[72,71], 
+                        ind.coord.dist[72,71], 
+                        ind.coord.dist[74,73], 
+                        ind.coord.dist[74,73], 
+                        ind.coord.dist[76,75], 
+                        ind.coord.dist[76,75], 
+                        ind.coord.dist[78,77], 
+                        ind.coord.dist[78,77], 
+                        ind.coord.dist[80,79], 
+                        ind.coord.dist[80,79], 
+                        ind.coord.dist[82,81], 
+                        ind.coord.dist[82,81], 
+                        ind.coord.dist[84,83], 
+                        ind.coord.dist[84,83], 
+                        ind.coord.dist[86,85], 
+                        ind.coord.dist[86,85], 
+                        ind.coord.dist[88,87], 
+                        ind.coord.dist[88,87], 
+                        ind.coord.dist[90,89], 
+                        ind.coord.dist[90,89], 
+                        ind.coord.dist[92,91], 
+                        ind.coord.dist[92,91], 
+                        ind.coord.dist[94,93], 
+                        ind.coord.dist[94,93], 
+                        ind.coord.dist[96,95], 
+                        ind.coord.dist[96,95], 
+                        ind.coord.dist[98,97], 
+                        ind.coord.dist[98,97], 
+                        ind.coord.dist[100,99], 
+                        ind.coord.dist[100,99], 
+                        ind.coord.dist[102,101], 
+                        ind.coord.dist[102,101], 
+                        ind.coord.dist[104,103], 
+                        ind.coord.dist[104,103], 
+                        ind.coord.dist[106,105], 
+                        ind.coord.dist[106,105], 
+                        ind.coord.dist[108,107], 
+                        ind.coord.dist[108,107], 
+                        ind.coord.dist[110,109], 
+                        ind.coord.dist[110,109], 
+                        ind.coord.dist[112,111],
+                        ind.coord.dist[112,111]
+                        )
+#This step is likely to be optimised in the futuer anmd must be adapted to the number of input plants/genotypes. Any advise on automation is warmely welcome. :) 
+
+#compile distance results and export
+res.distance <- data.frame(data, res.ind.coord.dist)
+write.xlsx(res.distance, "DistanceResults.xlsx")
+
+#Prepare and extract distances of genotypes for normality check 
+distance.normality <- (res.distance[c((seq(1,(nrow(res.distance)), by = 2))),c(1, ncol(res.distance))]) # For correct normality check, vectors MUST be adapted to extract 1) Genotype 2) Distance
+write.xlsx(distance.normality, "DistanceNormality.xlsx")
+
+#calculate z-scores for distances
+
+z_scores <- ((distance.normality$res.ind.coord.dist-mean(distance.normality$res.ind.coord.dist))/sd(distance.normality$res.ind.coord.dist))
+distance.normality.z <- cbind(distance.normality, z_scores)
+write.xlsx(distance.normality.z, "DistanceNormalityZ-Score.xlsx")
+
+#Checking normality:
+library ("ggplot2")
+library ("dplyr")
+library ("ggpubr")
+####IMPORTANT: If a mean value for each genotype and treatment was used, you can continue. Else, distances must be calculated as described Material Methods and be imported into R again.
+ggqqplot(Plot_data$`z-score`,ylab ="z-score", xlab = "theoretical")
+ggsave("Figure5A.tiff", plot = last_plot(), height = 8.5, width = 8.5, units =c ("cm"), dpi=600)
+
+ggdensity(Plot_data$"z-score", fill = "lightgray", rug = TRUE, add = "mean", xlab ="z-score")
+ggsave("Figure5B.tiff", plot = last_plot(), height = 8.5, width = 8.5, units =c ("cm"), dpi=600)
+
+#finally savingh the workbench:
+save.image(file = "workspace.RData")
+
