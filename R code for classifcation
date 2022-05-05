@@ -131,6 +131,16 @@ ggsave("Figure5A.tiff", plot = last_plot(), height = 8.5, width = 8.5, units =c 
 ggdensity(Plot_data$"z-score", fill = "lightgray", rug = TRUE, add = "mean", xlab ="z-score")
 ggsave("Figure5B.tiff", plot = last_plot(), height = 8.5, width = 8.5, units =c ("cm"), dpi=600)
 
+#Further statistical evaluation requires distances obtained from raw data. IMPORTANT NOTE: The calctlation of distance between control samples and the treatment centroids is currently not implemented in this code and must be performed as described in the publication. 
+#Checking Homogeneity of Variance
+leveneTest(distance.normality.z$res.ind.coord.dist, distance.normality.z$Genotype)
+
+#Checking for significant differences bewtween distances
+oneway.test(res.ind.coord.dist ~ Genotype, data = distance.normality.z, var.equal = TRUE) # If no homogenity of variance is given, change car.equal to "FALSE". This will perform aWelch's ANOVA.
+
+#If ANOVA reported significant differences, perform the desired post-hoc test
+pairwise.t.test(distance.normality.z$res.ind.coord.dist, distance.normality.z$Genotype, p.adjust.method = "bonferroni")
+
 #finally savingh the workbench:
 save.image(file = "workspace.RData")
 
